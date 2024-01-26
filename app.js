@@ -48,7 +48,6 @@
 // // Start the server
 // app.listen(port, () => console.log(`Server is running on port ${port}`));
 
-
 const fs = require('fs');
 const axios = require('axios');
 const mysql = require('mysql');
@@ -56,7 +55,7 @@ const mysql = require('mysql');
 const githubUsername = 'WizKaMico';
 const githubRepo = 'hoopshop_image';
 const githubToken = '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';
-const githubBranch = 'main'; // Or specify your branch
+const githubBranch = 'main';
 
 const dbConnection = mysql.createConnection({
   host: 'localhost',
@@ -68,45 +67,29 @@ const dbConnection = mysql.createConnection({
 const imagesFolder = './images';
 const uploadedFolder = './uploaded_images';
 
-function uploadImageToGitHub(imagePath, imageName) {
-  const apiUrl = `https://api.github.com/repos/${githubUsername}/${githubRepo}/contents/${imageName}`;
-  const imageData = fs.readFileSync(imagePath);
-  const base64Image = Buffer.from(imageData).toString('base64');
-
-  return axios.put(apiUrl, {
-    message: 'Upload image to GitHub',
-    content: base64Image,
-    branch: githubBranch,
-  }, {
-    headers: {
-      Authorization: `token ${githubToken}`,
-    },
-  });
-}
-
-function updateDatabaseWithGitHubUrl(imageName, githubUrl) {
-  const updateQuery = 'UPDATE images SET github_url = ? WHERE filename = ?';
-
-  dbConnection.query(updateQuery, [githubUrl, imageName], (error, results) => {
+function imageExistsInDatabase(imageName, callback) {
+  const query = 'SELECT id FROM images WHERE filename = ?';
+  dbConnection.query(query, [imageName], (error, results) => {
     if (error) {
-      console.error('Error updating database with GitHub URL:', error);
+      callback(error, null);
     } else {
-      console.log('Database updated with GitHub URL:', results);
+      callback(null, results.length > 0);
     }
   });
 }
 
-function moveImageToUploadedFolder(imagePath, imageName) {
-  const newFilePath = `${uploadedFolder}/${imageName}`;
-
-  fs.rename(imagePath, newFilePath, (renameError) => {
-    if (renameError) {
-      console.error('Error moving the image:', renameError);
+function insertImageIntoDatabase(imageName, callback) {
+  const insertQuery = 'INSERT INTO images (filename) VALUES (?)';
+  dbConnection.query(insertQuery, [imageName], (error, results) => {
+    if (error) {
+      callback(error, null);
     } else {
-      console.log('Image moved to uploaded folder.');
+      callback(null, results.insertId);
     }
   });
 }
+
+// Rest of the functions remain unchanged
 
 fs.readdir(imagesFolder, (readError, files) => {
   if (readError) {
@@ -119,20 +102,42 @@ fs.readdir(imagesFolder, (readError, files) => {
 
     // Check if the file is an image
     if (imageName.match(/\.(jpg|jpeg|png|gif)$/i)) {
-      // Upload image to GitHub
-      uploadImageToGitHub(imagePath, imageName)
-        .then((response) => {
-          const githubUrl = response.data.content.html_url;
+      // Check if the image already exists in the database
+      imageExistsInDatabase(imageName, (databaseError, exists) => {
+        if (databaseError) {
+          console.error('Database error:', databaseError);
+          return;
+        }
 
-          // Update database with GitHub URL
-          updateDatabaseWithGitHubUrl(imageName, githubUrl);
-
-          // Move image to uploaded folder
-          moveImageToUploadedFolder(imagePath, imageName);
-        })
-        .catch((uploadError) => {
-          console.error('Error uploading image to GitHub:', uploadError.response ? uploadError.response.data : uploadError.message);
-        });
+        if (!exists) {
+          // Image doesn't exist in the database, insert it
+          insertImageIntoDatabase(imageName, (insertError, insertId) => {
+            if (insertError) {
+              console.error('Error inserting image into database:', insertError);
+            } else {
+              console.log('Image inserted into database with ID:', insertId);
+              
+              // Continue with uploading, updating, and moving
+              uploadImageToGitHub(imagePath, imageName)
+                .then((response) => {
+                  const githubUrl = response.data.content.html_url;
+  
+                  // Update database with GitHub URL
+                  updateDatabaseWithGitHubUrl(imageName, githubUrl);
+  
+                  // Move image to uploaded folder
+                  moveImageToUploadedFolder(imagePath, imageName);
+                })
+                .catch((uploadError) => {
+                  console.error('Error uploading image to GitHub:', uploadError.response ? uploadError.response.data : uploadError.message);
+                });
+            }
+          });
+        } else {
+          // Image already exists in the database, skip processing
+          console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
+        }
+      });
     }
   });
 });
