@@ -54,7 +54,7 @@ const mysql = require('mysql');
 
 const githubUsername = 'WizKaMico';
 const githubRepo = 'hoopshop_image';
-const githubToken = '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';
+const githubToken = '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';
 const githubBranch = 'main';
 
 const dbConnection = mysql.createConnection({
@@ -89,13 +89,56 @@ function insertImageIntoDatabase(imageName, callback) {
   });
 }
 
-// Rest of the functions remain unchanged
+function uploadImageToGitHub(imagePath, imageName) {
+    const apiUrl = `https://api.github.com/repos/${githubUsername}/${githubRepo}/contents/${imageName}`;
+    const imageData = fs.readFileSync(imagePath);
+    const base64Image = Buffer.from(imageData).toString('base64');
+  
+    return axios.put(apiUrl, {
+      message: 'Upload image to GitHub',
+      content: base64Image,
+      branch: githubBranch,
+    }, {
+      headers: {
+        Authorization: `token ${githubToken}`,
+      },
+    });
+  }
+  
+  // Function to update the database with GitHub URL
+  function updateDatabaseWithGitHubUrl(imageName, githubUrl) {
+    const updateQuery = 'UPDATE images SET github_url = ? WHERE filename = ?';
+  
+    dbConnection.query(updateQuery, [githubUrl, imageName], (error, results) => {
+      if (error) {
+        console.error('Error updating database with GitHub URL:', error);
+      } else {
+        console.log('Database updated with GitHub URL:', results);
+      }
+    });
+  }
+  
+  // Function to move image to the uploaded folder
+  function moveImageToUploadedFolder(imagePath, imageName) {
+    const newFilePath = `${uploadedFolder}/${imageName}`;
+  
+    fs.rename(imagePath, newFilePath, (renameError) => {
+      if (renameError) {
+        console.error('Error moving the image:', renameError);
+      } else {
+        console.log('Image moved to uploaded folder.');
+      }
+    });
+  }
 
 fs.readdir(imagesFolder, (readError, files) => {
   if (readError) {
     console.error('Error reading folder:', readError);
+    dbConnection.end();  // Close the database connection on error
     return;
   }
+
+  let pendingOperations = files.length;
 
   files.forEach((imageName) => {
     const imagePath = `${imagesFolder}/${imageName}`;
@@ -106,6 +149,10 @@ fs.readdir(imagesFolder, (readError, files) => {
       imageExistsInDatabase(imageName, (databaseError, exists) => {
         if (databaseError) {
           console.error('Database error:', databaseError);
+          pendingOperations--;
+          if (pendingOperations === 0) {
+            dbConnection.end();  // Close the database connection when all operations are done
+          }
           return;
         }
 
@@ -132,15 +179,22 @@ fs.readdir(imagesFolder, (readError, files) => {
                   console.error('Error uploading image to GitHub:', uploadError.response ? uploadError.response.data : uploadError.message);
                 });
             }
+
+            pendingOperations--;
+            if (pendingOperations === 0) {
+              dbConnection.end();  // Close the database connection when all operations are done
+            }
           });
         } else {
           // Image already exists in the database, skip processing
           console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
+
+          pendingOperations--;
+          if (pendingOperations === 0) {
+            dbConnection.end();  // Close the database connection when all operations are done
+          }
         }
       });
     }
   });
 });
-
-// Close the database connection after processing
-dbConnection.end();
