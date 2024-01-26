@@ -84,6 +84,18 @@ function insertImageIntoDatabase(imageName, callback) {
   });
 }
 
+function updateDatabaseWithGitHubUrl(imageName, githubUrl, callback) {
+  const updateQuery = 'UPDATE images SET github_url = ? WHERE filename = ?';
+
+  dbConnection.query(updateQuery, [githubUrl, imageName], (error, results) => {
+    if (error) {
+      callback(error, null);
+    } else {
+      callback(null, results);
+    }
+  });
+}
+
 function moveAndPushToGitHub(imagePath, imageName) {
   const newFilePath = `${uploadedFolder}/${imageName}`;
   const commitMessage = `Add ${imageName}`;
@@ -99,7 +111,18 @@ function moveAndPushToGitHub(imagePath, imageName) {
           console.error('Error pushing to GitHub:', error.message);
           return;
         }
+
         console.log('Pushed to GitHub successfully:', stdout);
+
+        const githubUrl = `https://raw.githubusercontent.com/WizKaMico/hoopshop_image/main/uploaded_images/${imageName}`;
+
+        updateDatabaseWithGitHubUrl(imageName, githubUrl, (updateError, updateResults) => {
+          if (updateError) {
+            console.error('Error updating database with GitHub URL:', updateError);
+          } else {
+            console.log('Database updated with GitHub URL:', updateResults);
+          }
+        });
       });
     }
   });
