@@ -96,83 +96,88 @@ function updateDatabaseWithGitHubUrl(imageName, githubUrl, callback) {
   });
 }
 
-function moveAndPushToGitHub(imagePath, imageName) {
+function moveAndPushToGitHub(imagePath, imageName, callback) {
   const newFilePath = `${uploadedFolder}/${imageName}`;
   const commitMessage = `Add ${imageName}`;
 
   fs.rename(imagePath, newFilePath, (renameError) => {
     if (renameError) {
-      console.error('Error moving the image:', renameError);
-    } else {
-      console.log('Image moved to uploaded folder.');
-
-      exec(`git add ${uploadedFolder}/${imageName} && git commit -m "${commitMessage}" && git push`, (error, stdout, stderr) => {
-        if (error) {
-          console.error('Error pushing to GitHub:', error.message);
-          return;
-        }
-
-        console.log('Pushed to GitHub successfully:', stdout);
-
-        const githubUrl = `https://raw.githubusercontent.com/WizKaMico/hoopshop_image/main/uploaded_images/${imageName}`;
-
-        updateDatabaseWithGitHubUrl(imageName, githubUrl, (updateError, updateResults) => {
-          if (updateError) {
-            console.error('Error updating database with GitHub URL:', updateError);
-          } else {
-            console.log('Database updated with GitHub URL:', updateResults);
-          }
-        });
-      });
+      callback(renameError);
+      return;
     }
+
+    console.log('Image moved to uploaded folder.');
+
+    exec(`git add ${uploadedFolder}/${imageName} && git commit -m "${commitMessage}" && git push`, (error, stdout, stderr) => {
+      if (error) {
+        callback(error);
+        return;
+      }
+
+      console.log('Pushed to GitHub successfully:', stdout);
+
+      const githubUrl = `https://raw.githubusercontent.com/WizKaMico/hoopshop_image/main/uploaded_images/${imageName}`;
+
+      updateDatabaseWithGitHubUrl(imageName, githubUrl, (updateError, updateResults) => {
+        if (updateError) {
+          callback(updateError);
+        } else {
+          console.log('Database updated with GitHub URL:', updateResults);
+          callback(null);
+        }
+      });
+    });
   });
 }
 
-fs.readdir(imagesFolder, (readError, files) => {
-  if (readError) {
-    console.error('Error reading folder:', readError);
-    dbConnection.end();
-    return;
-  }
-
-  let pendingOperations = files.length;
-
-  files.forEach((imageName) => {
-    const imagePath = `${imagesFolder}/${imageName}`;
-
-    if (imageName.match(/\.(jpg|jpeg|png|gif)$/i)) {
-      imageExistsInDatabase(imageName, (databaseError, exists) => {
-        if (databaseError) {
-          console.error('Database error:', databaseError);
-          pendingOperations--;
-          if (pendingOperations === 0) {
-            dbConnection.end();
-          }
-          return;
-        }
-
-        if (!exists) {
-          insertImageIntoDatabase(imageName, (insertError, insertId) => {
-            if (insertError) {
-              console.error('Error inserting image into database:', insertError);
-            } else {
-              console.log('Image inserted into database with ID:', insertId);
-              moveAndPushToGitHub(imagePath, imageName);
-            }
-
-            pendingOperations--;
-            if (pendingOperations === 0) {
-              dbConnection.end();
-            }
-          });
-        } else {
-          console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
-          pendingOperations--;
-          if (pendingOperations === 0) {
-            dbConnection.end();
-          }
-        }
-      });
+function processImages() {
+  fs.readdir(imagesFolder, (readError, files) => {
+    if (readError) {
+      console.error('Error reading folder:', readError);
+      dbConnection.end();
+      return;
     }
+
+    let pendingOperations = files.length;
+
+    files.forEach((imageName) => {
+      const imagePath = `${imagesFolder}/${imageName}`;
+
+      if (imageName.match(/\.(jpg|jpeg|png|gif)$/i)) {
+        imageExistsInDatabase(imageName, (databaseError, exists) => {
+          if (databaseError) {
+            console.error('Database error:', databaseError);
+          } else {
+            if (!exists) {
+              insertImageIntoDatabase(imageName, (insertError, insertId) => {
+                if (insertError) {
+                  console.error('Error inserting image into database:', insertError);
+                } else {
+                  console.log('Image inserted into database with ID:', insertId);
+                  moveAndPushToGitHub(imagePath, imageName, (moveError) => {
+                    if (moveError) {
+                      console.error('Error moving and pushing to GitHub:', moveError);
+                    }
+                    pendingOperations--;
+                    if (pendingOperations === 0) {
+                      dbConnection.end();
+                    }
+                  });
+                }
+              });
+            } else {
+              console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
+              pendingOperations--;
+              if (pendingOperations === 0) {
+                dbConnection.end();
+              }
+            }
+          }
+        });
+      }
+    });
   });
-});
+}
+
+// Start processing images
+processImages();
