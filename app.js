@@ -55,14 +55,14 @@ const mysql = require('mysql');
 
 const githubUsername = 'WizKaMico';
 const githubRepo = 'hoopshop_image';
-const githubToken = 'YourGitHubAccessToken';
+const githubToken = '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';
 const githubBranch = 'main'; // Or specify your branch
 
 const dbConnection = mysql.createConnection({
-  host: 'your-database-host',
-  user: 'your-database-user',
-  password: 'your-database-password',
-  database: 'your-database-name',
+  host: 'localhost',
+  user: 'root',
+  password: '',
+  database: 'hoop_test',
 });
 
 const imagesFolder = './images';
