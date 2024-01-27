@@ -49,7 +49,6 @@
 // app.listen(port, () => console.log(`Server is running on port ${port}`));
 
 
-
 const { exec } = require('child_process');
 const fs = require('fs');
 const mysql = require('mysql');
@@ -62,128 +61,125 @@ const dbConnection = mysql.createConnection({
   database: 'hoop_test',
 });
 
-const imagesFolder = './images';
-const uploadedFolder = './uploaded_images';
+dbConnection.connect((error) => {
+  if (error) {
+    console.error('Error connecting to the database:', error);
+    return;
+  }
 
-function imageExistsInDatabase(imageName, callback) {
-  const query = 'SELECT id FROM images WHERE filename = ?';
-  dbConnection.query(query, [imageName], (error, results) => {
-    if (error) {
-      callback(error, null);
-    } else {
-      callback(null, results.length > 0);
-    }
-  });
-}
+  const imagesFolder = './images';
+  const uploadedFolder = './uploaded_images';
 
-function insertImageIntoDatabase(imageName, callback) {
-  const insertQuery = 'INSERT INTO images (filename, upload_status) VALUES (?, ?)';
-  // Set upload_upload_upload_status to 'pending' when inserting
-  dbConnection.query(insertQuery, [imageName, 'pending'], (error, results) => {
-    if (error) {
-      callback(error, null);
-    } else {
-      callback(null, results.insertId);
-    }
-  });
-}
-
-function updateDatabaseWithGitHubUrl(imageName, githubUrl, callback) {
-  const updateQuery = 'UPDATE images SET github_url = ?, upload_status = ? WHERE filename = ?';
-  // Set upload_upload_status to 'uploaded' when updating
-  dbConnection.query(updateQuery, [githubUrl, 'uploaded', imageName], (error, results) => {
-    if (error) {
-      callback(error, null);
-    } else {
-      callback(null, results);
-    }
-  });
-}
-
-function moveAndPushToGitHub(imagePath, imageName, callback) {
-  const newFilePath = `${uploadedFolder}/${imageName}`;
-  const commitMessage = `Add ${imageName}`;
-
-  fs.rename(imagePath, newFilePath, (renameError) => {
-    if (renameError) {
-      callback(renameError);
-      return;
-    }
-
-    console.log('Image moved to uploaded folder.');
-
-    exec(`git add ${uploadedFolder}/${imageName} && git commit -m "${commitMessage}" && git push`, (error, stdout, stderr) => {
+  function imageExistsInDatabase(imageName, callback) {
+    const query = 'SELECT id FROM images WHERE filename = ?';
+    dbConnection.query(query, [imageName], (error, results) => {
       if (error) {
-        callback(error);
+        callback(error, null);
+      } else {
+        callback(null, results.length > 0);
+      }
+    });
+  }
+
+  function insertImageIntoDatabase(imageName, callback) {
+    const insertQuery = 'INSERT INTO images (filename, upload_status) VALUES (?, ?)';
+    dbConnection.query(insertQuery, [imageName, 'pending'], (error, results) => {
+      if (error) {
+        callback(error, null);
+      } else {
+        callback(null, results.insertId);
+      }
+    });
+  }
+
+  function updateDatabaseWithGitHubUrl(imageName, githubUrl, callback) {
+    const updateQuery = 'UPDATE images SET github_url = ?, upload_status = ? WHERE filename = ?';
+    dbConnection.query(updateQuery, [githubUrl, 'uploaded', imageName], (error, results) => {
+      if (error) {
+        callback(error, null);
+      } else {
+        callback(null, results);
+      }
+    });
+  }
+
+  function moveAndPushToGitHub(imagePath, imageName, callback) {
+    const newFilePath = `${uploadedFolder}/${imageName}`;
+    const commitMessage = `Add ${imageName}`;
+
+    fs.rename(imagePath, newFilePath, (renameError) => {
+      if (renameError) {
+        callback(renameError);
         return;
       }
 
-      console.log('Pushed to GitHub successfully:', stdout);
+      exec(`git add ${uploadedFolder}/${imageName} && git commit -m "${commitMessage}" && git push`, (error, stdout, stderr) => {
+        if (error) {
+          callback(error);
+          return;
+        }
 
-      const githubUrl = `https://raw.githubusercontent.com/WizKaMico/hoopshop_image/main/uploaded_images/${imageName}`;
+        const githubUrl = `https://raw.githubusercontent.com/WizKaMico/hoopshop_image/main/uploaded_images/${imageName}`;
 
-      updateDatabaseWithGitHubUrl(imageName, githubUrl, (updateError, updateResults) => {
-        if (updateError) {
-          callback(updateError);
-        } else {
-          console.log('Database updated with GitHub URL:', updateResults);
-          callback(null);
+        updateDatabaseWithGitHubUrl(imageName, githubUrl, (updateError, updateResults) => {
+          if (updateError) {
+            callback(updateError);
+          } else {
+            callback(null);
+          }
+        });
+      });
+    });
+  }
+
+  function processImages() {
+    fs.readdir(imagesFolder, (readError, files) => {
+      if (readError) {
+        console.error('Error reading folder:', readError);
+        return;
+      }
+
+      let pendingOperations = files.length;
+
+      files.forEach((imageName) => {
+        const imagePath = `${imagesFolder}/${imageName}`;
+
+        if (imageName.match(/\.(jpg|jpeg|png|gif)$/i)) {
+          imageExistsInDatabase(imageName, (databaseError, exists) => {
+            if (databaseError) {
+              console.error('Database error:', databaseError);
+            } else {
+              if (!exists) {
+                insertImageIntoDatabase(imageName, (insertError, insertId) => {
+                  if (insertError) {
+                    console.error('Error inserting image into database:', insertError);
+                  } else {
+                    moveAndPushToGitHub(imagePath, imageName, (moveError) => {
+                      if (moveError) {
+                        console.error('Error moving and pushing to GitHub:', moveError);
+                      }
+                      pendingOperations--;
+                      if (pendingOperations === 0) {
+                        dbConnection.end();
+                      }
+                    });
+                  }
+                });
+              } else {
+                pendingOperations--;
+                if (pendingOperations === 0) {
+                  dbConnection.end();
+                }
+              }
+            }
+          });
         }
       });
     });
-  });
-}
+  }
 
-function processImages() {
-  fs.readdir(imagesFolder, (readError, files) => {
-    if (readError) {
-      console.error('Error reading folder:', readError);
-      return;
-    }
-
-    let pendingOperations = files.length;
-
-    files.forEach((imageName) => {
-      const imagePath = `${imagesFolder}/${imageName}`;
-
-      if (imageName.match(/\.(jpg|jpeg|png|gif)$/i)) {
-        imageExistsInDatabase(imageName, (databaseError, exists) => {
-          if (databaseError) {
-            console.error('Database error:', databaseError);
-          } else {
-            if (!exists) {
-              insertImageIntoDatabase(imageName, (insertError, insertId) => {
-                if (insertError) {
-                  console.error('Error inserting image into database:', insertError);
-                } else {
-                  console.log('Image inserted into database with ID:', insertId);
-                  moveAndPushToGitHub(imagePath, imageName, (moveError) => {
-                    if (moveError) {
-                      console.error('Error moving and pushing to GitHub:', moveError);
-                    }
-                    pendingOperations--;
-                    if (pendingOperations === 0) {
-                      // No more pending operations, close the database connection
-                      dbConnection.end();
-                    }
-                  });
-                }
-              });
-            } else {
-              console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
-              pendingOperations--;
-              if (pendingOperations === 0) {
-                // No more pending operations, close the database connection
-                dbConnection.end();
-              }
-            }
-          }
-        });
-      }
-    });
-  });
-}
-
- cron.schedule('*/2 * * * *', () => {
+  cron.schedule('*/2 * * * *', () => {
     processImages();
- });
+  });
+});
+
