@@ -74,18 +74,6 @@ function openDbConnection() {
   });
 }
 
-function closeDbConnection() {
-  if (dbConnection) {
-    dbConnection.end((err) => {
-      if (err) {
-        console.error('Error closing database connection:', err);
-      } else {
-        console.log('Database connection closed.');
-      }
-    });
-  }
-}
-
 function imageExistsInDatabase(imageName, callback) {
   if (dbConnection && dbConnection.state === 'authenticated') {
     const query = 'SELECT id FROM images WHERE filename = ?';
@@ -186,8 +174,8 @@ function processImages() {
                     }
                     pendingOperations--;
                     if (pendingOperations === 0) {
-                      // No more pending operations, close the database connection
-                      closeDbConnection();
+                      // No more pending operations
+                      console.log('All pending operations completed.');
                     }
                   });
                 }
@@ -196,8 +184,8 @@ function processImages() {
               console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
               pendingOperations--;
               if (pendingOperations === 0) {
-                // No more pending operations, close the database connection
-                closeDbConnection();
+                // No more pending operations
+                console.log('All pending operations completed.');
               }
             }
           }
@@ -219,7 +207,3 @@ cron.schedule('*/2 * * * *', () => {
     console.error('Database connection not available.');
   }
 });
-
-// Close the database connection when the process exits
-process.on('exit', closeDbConnection);
-process.on('SIGINT', closeDbConnection);
