@@ -113,11 +113,15 @@ dbConnection.connect((error) => {
         return;
       }
 
+      console.log('Image moved to uploaded folder.');
+
       exec(`git add ${uploadedFolder}/${imageName} && git commit -m "${commitMessage}" && git push`, (error, stdout, stderr) => {
         if (error) {
           callback(error);
           return;
         }
+
+        console.log('Pushed to GitHub successfully:', stdout);
 
         const githubUrl = `https://raw.githubusercontent.com/WizKaMico/hoopshop_image/main/uploaded_images/${imageName}`;
 
@@ -141,6 +145,14 @@ dbConnection.connect((error) => {
 
       let pendingOperations = files.length;
 
+      function checkAndCloseConnection() {
+        pendingOperations--;
+        if (pendingOperations === 0) {
+          // No more pending operations, close the database connection
+          dbConnection.end();
+        }
+      }
+
       files.forEach((imageName) => {
         const imagePath = `${imagesFolder}/${imageName}`;
 
@@ -153,23 +165,20 @@ dbConnection.connect((error) => {
                 insertImageIntoDatabase(imageName, (insertError, insertId) => {
                   if (insertError) {
                     console.error('Error inserting image into database:', insertError);
+                    checkAndCloseConnection();
                   } else {
+                    console.log('Image inserted into database with ID:', insertId);
                     moveAndPushToGitHub(imagePath, imageName, (moveError) => {
                       if (moveError) {
                         console.error('Error moving and pushing to GitHub:', moveError);
                       }
-                      pendingOperations--;
-                      if (pendingOperations === 0) {
-                        dbConnection.end();
-                      }
+                      checkAndCloseConnection();
                     });
                   }
                 });
               } else {
-                pendingOperations--;
-                if (pendingOperations === 0) {
-                  dbConnection.end();
-                }
+                console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
+                checkAndCloseConnection();
               }
             }
           });
@@ -178,8 +187,13 @@ dbConnection.connect((error) => {
     });
   }
 
-  cron.schedule('*/2 * * * *', () => {
+  // Run the initial processImages() call
+  processImages();
+
+  // Schedule cron job to run processImages() whenever new images are added
+  cron.schedule('* * * * *', () => {
     processImages();
   });
 });
+
 
