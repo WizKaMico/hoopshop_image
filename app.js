@@ -74,8 +74,8 @@ function imageExistsInDatabase(imageName, callback) {
 }
 
 function insertImageIntoDatabase(imageName, callback) {
-  const insertQuery = 'INSERT INTO images (filename, status) VALUES (?, ?)';
-  // Set status to 'pending' when inserting
+  const insertQuery = 'INSERT INTO images (filename, upload_status) VALUES (?, ?)';
+  // Set upload_upload_upload_status to 'pending' when inserting
   dbConnection.query(insertQuery, [imageName, 'pending'], (error, results) => {
     if (error) {
       callback(error, null);
@@ -86,8 +86,8 @@ function insertImageIntoDatabase(imageName, callback) {
 }
 
 function updateDatabaseWithGitHubUrl(imageName, githubUrl, callback) {
-  const updateQuery = 'UPDATE images SET github_url = ?, status = ? WHERE filename = ?';
-  // Set status to 'uploaded' when updating
+  const updateQuery = 'UPDATE images SET github_url = ?, upload_status = ? WHERE filename = ?';
+  // Set upload_upload_status to 'uploaded' when updating
   dbConnection.query(updateQuery, [githubUrl, 'uploaded', imageName], (error, results) => {
     if (error) {
       callback(error, null);
