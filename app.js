@@ -48,9 +48,12 @@
 // // Start the server
 // app.listen(port, () => console.log(`Server is running on port ${port}`));
 
+
+
 const { exec } = require('child_process');
 const fs = require('fs');
 const mysql = require('mysql');
+const cron = require('node-cron');
 
 const dbConnection = mysql.createConnection({
   host: 'localhost',
@@ -181,8 +184,6 @@ function processImages() {
   });
 }
 
-// Set interval to check for new images every 1 minute (60000 milliseconds)
-setInterval(processImages, 60000);
-
-// Start processing images immediately
-processImages();
+ cron.schedule('*/2 * * * *', () => {
+    processImages();
+ });
