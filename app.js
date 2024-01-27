@@ -74,8 +74,9 @@ function imageExistsInDatabase(imageName, callback) {
 }
 
 function insertImageIntoDatabase(imageName, callback) {
-  const insertQuery = 'INSERT INTO images (filename) VALUES (?)';
-  dbConnection.query(insertQuery, [imageName], (error, results) => {
+  const insertQuery = 'INSERT INTO images (filename, status) VALUES (?, ?)';
+  // Set status to 'pending' when inserting
+  dbConnection.query(insertQuery, [imageName, 'pending'], (error, results) => {
     if (error) {
       callback(error, null);
     } else {
@@ -85,9 +86,9 @@ function insertImageIntoDatabase(imageName, callback) {
 }
 
 function updateDatabaseWithGitHubUrl(imageName, githubUrl, callback) {
-  const updateQuery = 'UPDATE images SET github_url = ? WHERE filename = ?';
-
-  dbConnection.query(updateQuery, [githubUrl, imageName], (error, results) => {
+  const updateQuery = 'UPDATE images SET github_url = ?, status = ? WHERE filename = ?';
+  // Set status to 'uploaded' when updating
+  dbConnection.query(updateQuery, [githubUrl, 'uploaded', imageName], (error, results) => {
     if (error) {
       callback(error, null);
     } else {
@@ -134,7 +135,6 @@ function processImages() {
   fs.readdir(imagesFolder, (readError, files) => {
     if (readError) {
       console.error('Error reading folder:', readError);
-      dbConnection.end();
       return;
     }
 
@@ -160,6 +160,7 @@ function processImages() {
                     }
                     pendingOperations--;
                     if (pendingOperations === 0) {
+                      // No more pending operations, close the database connection
                       dbConnection.end();
                     }
                   });
@@ -169,6 +170,7 @@ function processImages() {
               console.log(`Image '${imageName}' already exists in the database. Skipping processing.`);
               pendingOperations--;
               if (pendingOperations === 0) {
+                // No more pending operations, close the database connection
                 dbConnection.end();
               }
             }
@@ -179,5 +181,8 @@ function processImages() {
   });
 }
 
-// Start processing images
+// Set interval to check for new images every 1 minute (60000 milliseconds)
+setInterval(processImages, 60000);
+
+// Start processing images immediately
 processImages();
